@@ -17,15 +17,13 @@ pub enum Error {
 }
 
 fn hasher() -> MapToCurveBasedHasher<G2Projective, DefaultFieldHasher<Sha256, 128>, WBMap<Config>> {
-    let wb_to_curve_hasher =
-        MapToCurveBasedHasher::<G2Projective, DefaultFieldHasher<Sha256, 128>, WBMap<Config>>::new(
-            &[1, 3, 3, 7],
-        )
-        .unwrap();
-    wb_to_curve_hasher
+    MapToCurveBasedHasher::<G2Projective, DefaultFieldHasher<Sha256, 128>, WBMap<Config>>::new(&[
+        1, 3, 3, 7,
+    ])
+    .unwrap()
 }
 
-#[derive(CanonicalSerialize, CanonicalDeserialize)]
+#[derive(CanonicalSerialize, CanonicalDeserialize, Debug)]
 pub struct ElGamal(G1Affine, G1Affine);
 
 impl ElGamal {
@@ -74,7 +72,7 @@ impl Auditor {
     }
 }
 
-#[derive(CanonicalSerialize, CanonicalDeserialize)]
+#[derive(CanonicalSerialize, CanonicalDeserialize, Debug)]
 pub struct Blob {
     pub sender_pk: G1Affine,
     pub c: ElGamal,
@@ -107,7 +105,7 @@ pub fn main() {
     welcome();
     puzzle(PUZZLE_DESCRIPTION);
 
-    let messages = generate_message_space();
+    let messages = generate_message_space(); // [(x, y) in G1]
 
     let mut file = File::open("blob.bin").unwrap();
     let mut data = Vec::new();
@@ -118,8 +116,32 @@ pub fn main() {
     assert!(Auditor::check_auth(blob.sender_pk, &blob.c, blob.s));
 
     /* Implement your attack here, to find the index of the encrypted message */
+    println!("************* Given *************");
+    println!("{:?}", blob);
+    println!("-------");
 
-    unimplemented!();
+    assert_eq!(blob.c.0, blob.sender_pk);
+    println!("Second part of the commitment: {:?}", blob.c.1);
+    println!("**********************************");
+
+    let mut potential_sks = vec![];
+    for (index, msg) in messages.iter().enumerate() {
+        let pkr_times_sk = blob.c.1 - msg.0;
+        let rhs = { Bls12_381::pairing(blob.rec_pk, blob.s) };
+        let hash_c = blob.c.hash_to_curve();
+        let lhs = { Bls12_381::pairing(pkr_times_sk, hash_c) };
+
+        // Extract the x-coordinate of `blob.rec_pk` as a scalar (inverse required for division)
+        // Use scalar multiplication to find the candidate secret key
+        if lhs == rhs {
+            println!(
+                "Candidate message is number {} with repr: {:?}",
+                index + 1,
+                msg.0
+            );
+            potential_sks.push(msg.0);
+        }
+    }
 
     /* End of attack */
 }
